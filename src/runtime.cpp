@@ -65,26 +65,65 @@ template<> template<typename... Args>
 Platform* PlatformFactory<HSAPlatform>::create(Runtime* runtime, const std::string& reference, Args... args);
 #endif
 
-Runtime& runtime() {
+ProfileLevel * Runtime::profile_;
+std::vector<Platform*> * Runtime::platforms_;
+std::unordered_map<std::string, std::string> * Runtime::files_;
+std::atomic_int * Runtime::life_count;
+std::atomic_int * Runtime::alloc_count;
+
+Runtime runtime() {
     static std::unique_ptr<Runtime> runtime(new Runtime());
+    if (!runtime)
+        return Runtime();
     return *runtime;
 }
 
 Runtime::Runtime() {
-    profile_ = ProfileLevel::None;
-    const char* env_var = std::getenv("ANYDSL_PROFILE");
-    if (env_var) {
-        std::string env_str = env_var;
-        for (auto& c: env_str)
-            c = std::toupper(c, std::locale());
-        if (env_str == "FULL")
-            profile_ = ProfileLevel::Full;
+    if (!life_count) {
+        life_count = new std::atomic_int(1);
+        alloc_count = new std::atomic_int(0);
+
+        profile_ = new ProfileLevel(ProfileLevel::None);
+        platforms_ = new std::vector<Platform*>();
+        files_ = new std::unordered_map<std::string, std::string>();
+
+        const char* env_var = std::getenv("ANYDSL_PROFILE");
+        if (env_var) {
+            std::string env_str = env_var;
+            for (auto& c: env_str)
+                c = std::toupper(c, std::locale());
+            if (env_str == "FULL")
+                *profile_ = ProfileLevel::Full;
+        }
+
+        register_platform<CpuPlatform>("CPU");
+        register_platform<CudaPlatform>("CUDA");
+        register_platform<OpenCLPlatform>("OpenCL");
+        register_platform<HSAPlatform>("HSA");
+    } else {
+        (*life_count)++;
+    }
+}
+
+Runtime::Runtime(const Runtime &) {
+    (*life_count)++;
+}
+
+Runtime::~Runtime() {
+    if (--(*life_count))
+        return;
+    if (*alloc_count)
+        return;
+
+    for (auto p: *platforms_) {
+        delete p;
     }
 
-    register_platform<CpuPlatform>("CPU");
-    register_platform<CudaPlatform>("CUDA");
-    register_platform<OpenCLPlatform>("OpenCL");
-    register_platform<HSAPlatform>("HSA");
+    delete (life_count);
+    delete (alloc_count);
+    delete (profile_);
+    delete (platforms_);
+    delete (files_);
 }
 
 #ifdef _WIN32
@@ -170,8 +209,8 @@ inline std::string read_stream(std::istream& stream) {
 }
 
 std::string Runtime::load_file(const std::string& filename) const {
-    auto file_it = files_.find(filename);
-    if (file_it != files_.end())
+    auto file_it = files_->find(filename);
+    if (file_it != files_->end())
         return file_it->second;
 
     std::ifstream src_file(filename);
@@ -231,14 +270,20 @@ void anydsl_info(void) {
 }
 
 void* anydsl_alloc(int32_t mask, int64_t size) {
-    return runtime().alloc(to_platform(mask), to_device(mask), size);
+    Runtime rt = runtime();
+    (*rt.alloc_count)++;
+    return rt.alloc(to_platform(mask), to_device(mask), size);
 }
 
 void* anydsl_alloc_host(int32_t mask, int64_t size) {
-    return runtime().alloc_host(to_platform(mask), to_device(mask), size);
+    Runtime rt = runtime();
+    (*rt.alloc_count)++;
+    return rt.alloc_host(to_platform(mask), to_device(mask), size);
 }
 
 void* anydsl_alloc_unified(int32_t mask, int64_t size) {
+    Runtime rt = runtime();
+    (*rt.alloc_count)++;
     return runtime().alloc_unified(to_platform(mask), to_device(mask), size);
 }
 
@@ -247,11 +292,15 @@ void* anydsl_get_device_ptr(int32_t mask, void* ptr) {
 }
 
 void anydsl_release(int32_t mask, void* ptr) {
-    runtime().release(to_platform(mask), to_device(mask), ptr);
+    Runtime rt = runtime();
+    (*rt.alloc_count)--;
+    rt.release(to_platform(mask), to_device(mask), ptr);
 }
 
 void anydsl_release_host(int32_t mask, void* ptr) {
-    runtime().release_host(to_platform(mask), to_device(mask), ptr);
+    Runtime rt = runtime();
+    (*rt.alloc_count)--;
+    rt.release_host(to_platform(mask), to_device(mask), ptr);
 }
 
 void anydsl_copy(int32_t mask_src, const void* src, int64_t offset_src,
