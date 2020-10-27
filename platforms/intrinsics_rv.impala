@@ -11,3 +11,4 @@
 #[import(cc = "C")] fn rv_compact(_: f32, _: bool) -> f32;
 #[import(cc = "C")] fn rv_lane_id() -> i32;
 #[import(cc = "C")] fn rv_num_lanes() -> i32;
+#[import(cc = "C")] fn rv_index(_: bool) -> i32;
