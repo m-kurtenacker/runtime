@@ -12,3 +12,5 @@
 #[import(cc = "C")] fn rv_lane_id() -> i32;
 #[import(cc = "C")] fn rv_num_lanes() -> i32;
 #[import(cc = "C")] fn rv_index(_: bool) -> i32;
+
+#[import(cc = "C")] fn rv_assert_uniform(_: bool) -> bool;
