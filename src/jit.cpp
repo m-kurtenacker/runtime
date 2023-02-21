@@ -14,12 +14,16 @@
 #include <llvm/Support/TargetSelect.h>
 
 #include <thorin/be/codegen.h>
+#include <thorin/be/json/json.h>
 #include <thorin/be/llvm/cpu.h>
 #include <thorin/world.h>
 
 #include "anydsl_jit.h"
 #include "log.h"
 #include "runtime.h"
+
+#include <anyopt/typetable.h>
+#include <anyopt/irbuilder.h>
 
 bool compile(
     const std::vector<std::string>& file_names,
@@ -38,13 +42,125 @@ struct JIT {
         llvm::ExecutionEngine* engine;
     };
 
+    struct Intermediate_Program {
+        std::vector<nlohmann::json> json_repr;
+    };
+
     std::vector<Program> programs;
     Runtime* runtime;
     thorin::LogLevel log_level;
 
+    std::vector<Intermediate_Program> worlds;
+
     JIT(Runtime* runtime) : runtime(runtime), log_level(thorin::LogLevel::Warn) {
         llvm::InitializeNativeTarget();
         llvm::InitializeNativeTargetAsmPrinter();
+    }
+
+    int32_t compile_into(int32_t key, const char* program_src, uint32_t size) {
+        std::string module_name = "jit";
+
+        if (key == -1) {
+            worlds.emplace_back();
+            key = ((int32_t) worlds.size() - 1);
+        }
+
+        thorin::Thorin thorin = thorin::Thorin(module_name);
+        thorin::World& world = thorin.world();
+        world.set(log_level);
+        world.set(std::make_shared<thorin::Stream>(std::cerr));
+
+        std::string program_str = std::string(program_src, size);
+
+        if (!::compile(
+            { module_name },
+            { program_str },
+            world, std::cerr))
+            error("JIT: error while compiling sources");
+
+        thorin.opt();
+
+        std::string host_triple, host_cpu, host_attr, hls_flags;
+        thorin::json::CodeGen cg(thorin, false, host_triple, host_cpu, host_attr);
+        nlohmann::json& target = worlds[key].json_repr.emplace_back();
+        cg.emit_json(target);
+
+        return key;
+    }
+
+    int32_t compile_finish(int32_t key, uint32_t opt) {
+        // The LLVM context and module have to be alive for the duration of this function
+        std::unique_ptr<llvm::LLVMContext> llvm_context;
+        std::unique_ptr<llvm::Module> llvm_module;
+
+        std::string module_name = "jit";
+
+        bool debug = false;
+        assert(opt <= 3);
+
+        thorin::Thorin thorin(module_name);
+        thorin::World& world = thorin.world();
+        world.set(log_level);
+        world.set(std::make_shared<thorin::Stream>(std::cerr));
+
+        thorin::World::Externals extern_globals;
+
+        for (auto data : worlds[key].json_repr) {
+            anyopt::TypeTable table(thorin);
+            for (auto it : data["type_table"])
+                table.reconstruct_type(it);
+
+            anyopt::IRBuilder irbuilder(thorin, table, extern_globals);
+            for (auto it : data["defs"])
+                irbuilder.reconstruct_def(it);
+        }
+
+        thorin.opt();
+
+        std::string host_triple, host_cpu, host_attr, hls_flags;
+        thorin::DeviceBackends backends(world, opt, debug, hls_flags);
+
+        thorin::llvm::CPUCodeGen cg(thorin, opt, debug, host_triple, host_cpu, host_attr);
+        std::tie(llvm_context, llvm_module) = cg.emit_module();
+        std::stringstream stream;
+        llvm::raw_os_ostream llvm_stream(stream);
+        llvm_module->print(llvm_stream, nullptr);
+
+        if (backends.cgs[thorin::DeviceBackends::HLS])
+            error("JIT compilation of hls not supported!");
+        for (auto& cg : backends.cgs) {
+            if (cg) {
+                std::ostringstream stream;
+                cg->emit_stream(stream);
+                runtime->register_file(module_name + cg->file_ext(), stream.str());
+            }
+        }
+
+        llvm::TargetOptions options;
+        options.AllowFPOpFusion = llvm::FPOpFusion::Fast;
+
+        auto engine = llvm::EngineBuilder(std::move(llvm_module))
+            .setEngineKind(llvm::EngineKind::JIT)
+            .setMCPU(llvm::sys::getHostCPUName())
+            .setTargetOptions(options)
+            .setOptLevel(   opt == 0  ? llvm::CodeGenOpt::None    :
+                            opt == 1  ? llvm::CodeGenOpt::Less    :
+                            opt == 2  ? llvm::CodeGenOpt::Default :
+                        /* opt == 3 */ llvm::CodeGenOpt::Aggressive)
+            .create();
+        if (!engine)
+            return -1;
+
+        engine->finalizeObject();
+        programs.push_back(Program(engine));
+
+        return (int32_t)programs.size() - 1;
+    }
+
+    void dump_anydsl(int32_t key) {
+        for (auto json : worlds[key].json_repr)  {
+            std::cout << json.dump(2) << "\n";
+        }
     }
 
     int32_t compile(const char* program_src, uint32_t size, uint32_t opt) {
@@ -172,4 +288,16 @@ void anydsl_set_log_level(uint32_t log_level) {
 
 void* anydsl_lookup_function(int32_t key, const char* fn_name) {
     return jit().lookup_function(key, fn_name);
+}
+
+int32_t anydsl_compile_into(int32_t key, const char* program, uint32_t size) {
+    return jit().compile_into(key, program, size);
+}
+
+int32_t anydsl_compile_finish(int32_t key, uint32_t opt) {
+    return jit().compile_finish(key, opt);
+}
+
+void anydsl_jit_dump(int32_t key) {
+    jit().dump_anydsl(key);
 }
