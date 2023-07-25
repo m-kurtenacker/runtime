@@ -451,7 +451,7 @@ static std::string emit_nvptx(const std::string& program, const std::string& lib
     llvm::PassManagerBuilder builder;
     builder.OptLevel = opt;
     builder.Inliner = llvm::createFunctionInliningPass(builder.OptLevel, 0, false);
-    machine->adjustPassManager(builder);
+    machine->registerPassBuilderCallbacks(builder);
     builder.populateFunctionPassManager(function_pass_manager);
     builder.populateModulePassManager(module_pass_manager);
 
