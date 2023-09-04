@@ -14,13 +14,13 @@
 #include <thread>
 
 #ifdef AnyDSL_runtime_HAS_LLVM_SUPPORT
-#include <llvm/Analysis/TargetTransformInfo.h>
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/IR/LegacyPassManager.h>
 #include <llvm/IR/Module.h>
 #include <llvm/IRReader/IRReader.h>
 #include <llvm/Linker/Linker.h>
 #include <llvm/MC/TargetRegistry.h>
+#include <llvm/Passes/PassBuilder.h>
 #include <llvm/Support/CommandLine.h>
 #include <llvm/Support/SourceMgr.h>
 #include <llvm/Support/TargetSelect.h>
@@ -73,6 +73,10 @@ CudaPlatform::CudaPlatform(Runtime* runtime)
     #endif
 
     CUresult err = cuInit(0);
+    if (err == CUDA_ERROR_NO_DEVICE) {
+        info("CUDA backend did not initialize because no devices were found (CUDA_ERROR_NO_DEVICE).");
+        return;
+    }
     CHECK_CUDA(err, "cuInit()");
 
     err = cuDeviceGetCount(&device_count);
@@ -387,7 +391,7 @@ std::string get_libdevice_path(CUjit_target) {
 
 #ifdef AnyDSL_runtime_HAS_LLVM_SUPPORT
 bool llvm_nvptx_initialized = false;
-static std::string emit_nvptx(const std::string& program, const std::string& libdevice_file, const std::string& cpu, const std::string &filename, int opt) {
+static std::string emit_nvptx(const std::string& program, const std::string& libdevice_file, const std::string& cpu, const std::string& filename, llvm::OptimizationLevel opt_level) {
     if (!llvm_nvptx_initialized) {
         // ANYDSL_LLVM_ARGS="-nvptx-sched4reg -nvptx-fma-level=2 -nvptx-prec-divf32=0 -nvptx-prec-sqrtf32=0 -nvptx-f32ftz=1"
         const char* env_var = std::getenv("ANYDSL_LLVM_ARGS");
@@ -426,7 +430,7 @@ static std::string emit_nvptx(const std::string& program, const std::string& lib
     auto target = llvm::TargetRegistry::lookupTarget(triple_str, error_str);
     llvm::TargetOptions options;
     options.AllowFPOpFusion = llvm::FPOpFusion::Fast;
-    std::unique_ptr<llvm::TargetMachine> machine(target->createTargetMachine(triple_str, cpu, "" /* attrs */, options, llvm::Reloc::PIC_, llvm::CodeModel::Small, llvm::CodeGenOpt::Aggressive));
+    llvm::TargetMachine* machine = target->createTargetMachine(triple_str, cpu, "" /* attrs */, options, llvm::Reloc::PIC_, llvm::CodeModel::Small, llvm::CodeGenOpt::Aggressive);
 
     // link libdevice
     std::unique_ptr<llvm::Module> libdevice_module(llvm::parseIRFile(libdevice_file, diagnostic_err, llvm_context));
@@ -442,35 +446,38 @@ static std::string emit_nvptx(const std::string& program, const std::string& lib
     if (linker.linkInModule(std::move(libdevice_module), llvm::Linker::Flags::LinkOnlyNeeded))
         error("Can't link libdevice into module");
 
-    llvm::legacy::FunctionPassManager function_pass_manager(llvm_module.get());
-    llvm::legacy::PassManager module_pass_manager;
 
-    module_pass_manager.add(llvm::createTargetTransformInfoWrapperPass(machine->getTargetIRAnalysis()));
-    function_pass_manager.add(llvm::createTargetTransformInfoWrapperPass(machine->getTargetIRAnalysis()));
-
-    llvm::PassManagerBuilder builder;
-    builder.OptLevel = opt;
-    builder.Inliner = llvm::createFunctionInliningPass(builder.OptLevel, 0, false);
-    machine->adjustPassManager(builder);
-    builder.populateFunctionPassManager(function_pass_manager);
-    builder.populateModulePassManager(module_pass_manager);
 
     machine->Options.MCOptions.AsmVerbose = true;
 
+    // create the analysis managers
+    llvm::LoopAnalysisManager LAM;
+    llvm::FunctionAnalysisManager FAM;
+    llvm::CGSCCAnalysisManager CGAM;
+    llvm::ModuleAnalysisManager MAM;
+
+    llvm::PassBuilder PB(machine);
+
+    PB.registerModuleAnalyses(MAM);
+    PB.registerCGSCCAnalyses(CGAM);
+    PB.registerFunctionAnalyses(FAM);
+    PB.registerLoopAnalyses(LAM);
+    PB.crossRegisterProxies(LAM, FAM, CGAM, MAM);
+
+    llvm::ModulePassManager MPM = PB.buildPerModuleDefaultPipeline(opt_level);
+
+    MPM.run(*llvm_module, MAM);
+
+    llvm::legacy::PassManager module_pass_manager;
     llvm::SmallString<0> outstr;
     llvm::raw_svector_ostream llvm_stream(outstr);
-
     machine->addPassesToEmitFile(module_pass_manager, llvm_stream, nullptr, llvm::CodeGenFileType::CGFT_AssemblyFile, true);
-
-    function_pass_manager.doInitialization();
-    for (auto func = llvm_module->begin(); func != llvm_module->end(); ++func)
-        function_pass_manager.run(*func);
-    function_pass_manager.doFinalization();
     module_pass_manager.run(*llvm_module);
+
     return outstr.c_str();
 }
 #else
-static std::string emit_nvptx(const std::string&, const std::string&, const std::string&, const std::string&, int) {
+static std::string emit_nvptx(const std::string&, const std::string&, const std::string&, const std::string&, llvm::OptimizationLevel) {
     error("Recompile runtime with LLVM enabled for nvptx support.");
 }
 #endif
@@ -478,7 +485,7 @@ static std::string emit_nvptx(const std::string&, const std::string&, const std:
 std::string CudaPlatform::compile_nvptx(DeviceId dev, const std::string& filename, const std::string& program_string) const {
     debug("Compiling NVVM to PTX using NVPTX for '%' on CUDA device %", filename, dev);
     std::string cpu = "sm_" + std::to_string(devices_[dev].compute_capability);
-    return emit_nvptx(program_string, get_libdevice_path(devices_[dev].compute_capability), cpu, filename, 3);
+    return emit_nvptx(program_string, get_libdevice_path(devices_[dev].compute_capability), cpu, filename, llvm::OptimizationLevel::O3);
 }
 
 #if CUDA_VERSION < 10000
