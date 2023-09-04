@@ -1,0 +1,43 @@
+#[import(cc = "device", name = "subgroup_elect_first")] fn subgroup_elect_first () -> bool;
+#[import(cc = "device", name = "subgroup_broadcast_first")] fn subgroup_broadcast_first () -> bool;
+#[import(cc = "device", name = "subgroup_reduce_sum")] fn subgroup_reduce_sum () -> bool;
+#[import(cc = "device", name = "subgroup_active_mask")] fn subgroup_active_mask () -> bool;
+#[import(cc = "device", name = "subgroup_ballot")] fn subgroup_ballot () -> bool;
+
+#[import(cc = "device", name = "subgroup_id")] fn subgroup_id () -> i32;
+#[import(cc = "device", name = "subgroup_local_id")] fn subgroup_local_id () -> i32;
+#[import(cc = "device", name = "workgroup_id")] fn workgroup_id () -> i32;
+#[import(cc = "device", name = "workgroup_local_id")] fn workgroup_local_id () -> i32;
+#[import(cc = "device", name = "global_id")] fn global_id () -> i32;
+#[import(cc = "device", name = "workgroup_size")] fn workgroup_size () -> i32;
+#[import(cc = "device", name = "workgroup_num")] fn workgroup_num () -> i32;
+
+fn @shady_accelerator(dev: i32) = Accelerator {
+  exec = @|body| |grid, block| {
+        let work_item = WorkItem {
+            tidx  = subgroup_local_id,
+            tidy  = @|| 1,
+            tidz  = @|| 1,
+            bidx  = subgroup_id,
+            bidy  = @|| 1,
+            bidz  = @|| 1,
+            gidx  = global_id,
+            gidy  = @|| 1,
+            gidz  = @|| 1,
+            bdimx = workgroup_size,
+            bdimy = @|| 1,
+            bdimz = @|| 1,
+            gdimx = @|| workgroup_num() * workgroup_size(),
+            gdimy = @|| 1,
+            gdimz = @|| 1,
+            nblkx = workgroup_num,
+            nblky = @|| 1,
+            nblkz = @|| 1
+        };
+        shady_compute(dev, grid, block, || @body(work_item))
+  },
+  sync = @|| {},
+  alloc = @|size| alloc_cuda(dev, size),
+  alloc_unified = @|size| alloc_cuda_unified(dev, size),
+  barrier = @|| {}
+};
