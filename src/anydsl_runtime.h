@@ -57,9 +57,11 @@ AnyDSL_runtime_API int32_t anydsl_isinf(double);
 AnyDSL_runtime_API int32_t anydsl_isnan(double);
 AnyDSL_runtime_API int32_t anydsl_isfinite(double);
 
+AnyDSL_runtime_API void anydsl_print_i8(int8_t);
 AnyDSL_runtime_API void anydsl_print_i16(int16_t);
 AnyDSL_runtime_API void anydsl_print_i32(int32_t);
 AnyDSL_runtime_API void anydsl_print_i64(int64_t);
+AnyDSL_runtime_API void anydsl_print_u8(uint8_t);
 AnyDSL_runtime_API void anydsl_print_u16(uint16_t);
 AnyDSL_runtime_API void anydsl_print_u32(uint32_t);
 AnyDSL_runtime_API void anydsl_print_u64(uint64_t);

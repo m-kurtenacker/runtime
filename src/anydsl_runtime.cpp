@@ -168,9 +168,11 @@ int32_t anydsl_isinf(double x)    { return std::isinf(x); }
 int32_t anydsl_isnan(double x)    { return std::isnan(x); }
 int32_t anydsl_isfinite(double x) { return std::isfinite(x); }
 
+void anydsl_print_i8(int8_t s)    { std::cout << (int16_t) s; }
 void anydsl_print_i16(int16_t s)  { std::cout << s; }
 void anydsl_print_i32(int32_t i)  { std::cout << i; }
 void anydsl_print_i64(int64_t l)  { std::cout << l; }
+void anydsl_print_u8(uint8_t s)   { std::cout << (uint16_t) s; }
 void anydsl_print_u16(uint16_t s) { std::cout << s; }
 void anydsl_print_u32(uint32_t i) { std::cout << i; }
 void anydsl_print_u64(uint64_t l) { std::cout << l; }

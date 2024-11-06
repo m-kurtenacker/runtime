@@ -19,9 +19,11 @@
 #[import(cc = "C", name = "anydsl_get_nano_time")]   fn get_nano_time() -> i64;
 #[import(cc = "C", name = "anydsl_get_kernel_time")] fn get_kernel_time() -> i64;
 
+#[import(cc = "C", name = "anydsl_print_i8")]     fn print_i8(_: i8) -> ();
 #[import(cc = "C", name = "anydsl_print_i16")]    fn print_i16(_: i16) -> ();
 #[import(cc = "C", name = "anydsl_print_i32")]    fn print_i32(_: i32) -> ();
 #[import(cc = "C", name = "anydsl_print_i64")]    fn print_i64(_: i64) -> ();
+#[import(cc = "C", name = "anydsl_print_u8")]     fn print_u8(_: u8) -> ();
 #[import(cc = "C", name = "anydsl_print_u16")]    fn print_u16(_: u16) -> ();
 #[import(cc = "C", name = "anydsl_print_u32")]    fn print_u32(_: u32) -> ();
 #[import(cc = "C", name = "anydsl_print_u64")]    fn print_u64(_: u64) -> ();
