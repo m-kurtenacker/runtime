@@ -225,7 +225,7 @@ function(anydsl_runtime_wrap outfiles)
 
     foreach (_plugin_file ${PARGS_PLUGINS})
         get_filename_component(_plugin_basename ${_plugin_file} NAME_WE)
-        set(_plugin_target ${_plugin_basename}_TARGET) #TODO: This fails if the same filename is used in different subfolders!
+        set(_plugin_target ${_plugin_basename}_PLUGIN) #TODO: This fails if the same filename is used in different subfolders!
 
         #message(WARNING "plugin is ${_plugin_file}")
         #message(WARNING "target is ${_plugin_target}")
