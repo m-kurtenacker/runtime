@@ -259,7 +259,8 @@ function(anydsl_runtime_wrap outfiles)
         endif()
         set(_frontend_flags ${PARGS_ARTIC_FLAGS} ${_opt_flags} ${_plugin_flags})
         set(_frontend_bin ${Artic_BIN})
-        list(APPEND _additional_platform_files "${AnyDSL_runtime_ROOT_DIR}/platforms/artic/intrinsics_math.impala")
+        list(APPEND _additional_platform_files ${AnyDSL_runtime_ROOT_DIR}/platforms/artic/intrinsics_math.impala
+                                               ${AnyDSL_runtime_ROOT_DIR}/platforms/artic/intrinsics_wmma.impala)
     endif()
 
     if(${_frontend} STREQUAL "anyopt")
@@ -321,7 +322,6 @@ function(anydsl_runtime_wrap outfiles)
             ${AnyDSL_runtime_ROOT_DIR}/platforms/${_frontend}/intrinsics_hls.impala
             ${AnyDSL_runtime_ROOT_DIR}/platforms/${_frontend}/intrinsics_cuda.impala
             ${AnyDSL_runtime_ROOT_DIR}/platforms/${_frontend}/intrinsics_nvvm.impala
-            ${AnyDSL_runtime_ROOT_DIR}/platforms/${_frontend}/intrinsics_wmma.impala
             ${AnyDSL_runtime_ROOT_DIR}/platforms/${_frontend}/intrinsics_amdgpu.impala
             ${AnyDSL_runtime_ROOT_DIR}/platforms/${_frontend}/intrinsics_opencl.impala
             ${AnyDSL_runtime_ROOT_DIR}/platforms/${_frontend}/intrinsics_thorin.impala
