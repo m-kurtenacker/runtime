@@ -511,7 +511,7 @@ struct mmul[T] { M : i32, K: i32, N: i32, data_type: T }
 #[import(cc = "device", name = "clear_rnd")] fn cgra_clear_rnd() -> ();
 
 
-#[import(cc = "device", name = "aie::print")] fn cgra_print[T](T, bool, &[u8]) -> ();
+//#[import(cc = "device", name = "aie::print")] fn cgra_print[T](T, bool, &[u8]) -> ();
 //#[import(cc = "device")] fn print_pragma(&[u8]) -> ();
 
 // channel scalar types
